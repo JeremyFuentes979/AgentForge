@@ -84,7 +84,33 @@ function generateAgent(need: string): AgentConfig {
   let systemPrompt: string;
   let inputs: InputField[];
 
-  if (lower.includes("tweet") || lower.includes("twitter") || lower.includes("social") || lower.includes("post")) {
+  if (lower.includes("assistant") || lower.includes("personal") || lower.includes("everyday") || lower.includes("helper") || lower.includes("schedule") || lower.includes("todo") || lower.includes("task") || lower.includes("organize")) {
+    name = "Personal Assistant AI";
+    icon = "🤖";
+    trigger = { type: "trigger", label: "User Command", description: "You submit an everyday task or scheduling request" };
+    actions = [
+      { type: "action", label: "Interpret Intent", description: "Analyze the task, priority, and any deadlines" },
+      { type: "action", label: "Structure Agenda", description: "Cross-reference schedule or categorize to-do items" },
+      { type: "action", label: "Draft Action/Plan", description: "Create confirmation drafts, schedule events, or format list" },
+    ];
+    output = { type: "output", label: "Response & Action", description: "Task successfully organized and ready to execute" };
+    systemPrompt = `You are Personal Assistant AI — a dedicated, highly organized everyday task and scheduling helper.
+
+Your responsibilities:
+1. Organize daily schedules, draft emails/texts, and set clear reminders based on natural language commands.
+2. Structure and maintain to-do lists, categorize tasks by priority (High, Medium, Low), and suggest productive time-blocks.
+3. Respond in a friendly, proactive, and highly organized executive-assistant persona.
+
+Always structure your replies clearly, like:
+- **Action Plan**: [what needs to be done]
+- **Scheduled Event/Task**: [date, time, or priority]
+- **Proactive Draft**: [suggested message or email confirmation if applicable]`;
+    inputs = [
+      { key: "schedule", label: "My Current Schedule / To-Do List", placeholder: "e.g., 9am Standup, 2pm Doctor, buy groceries", type: "textarea" },
+      { key: "assistant_tone", label: "Assistant Tone", placeholder: "e.g., professional, friendly, concise, proactive", type: "text" },
+      { key: "preferences", label: "Special Preferences", placeholder: "e.g., block out mornings for deep work", type: "text" },
+    ];
+  } else if (lower.includes("tweet") || lower.includes("twitter") || lower.includes("social") || lower.includes("post")) {
     name = "Social Sync Agent";
     icon = "📱";
     trigger = { type: "trigger", label: "Content Trigger", description: "New blog post or content published" };
@@ -427,7 +453,7 @@ function IntegrationGuide({ agent }: { agent: AgentConfig }) {
     });
   };
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://agentforge.ai";
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://clawlessai.com";
   const configJson = JSON.stringify(agent, null, 2);
 
   return (
@@ -550,8 +576,8 @@ function IntegrationGuide({ agent }: { agent: AgentConfig }) {
                 {
                   step: "2",
                   title: "Run the agent via CLI",
-                  desc: "Open your terminal and use the AgentForge CLI runner to start an interactive session.",
-                  code: `npx agentforge run --config ./agent-config.json --key YOUR_API_KEY`,
+                  desc: "Open your terminal and use the Clawless AI CLI runner to start an interactive session.",
+                  code: `npx clawless-ai run --config ./agent-config.json --key YOUR_API_KEY`,
                 },
                 {
                   step: "3",
@@ -688,7 +714,7 @@ function ExportPanel({ agent }: { agent: AgentConfig | null }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `agentforge-${agent.persona.name.toLowerCase().replace(/\s+/g, "-")}.json`;
+    a.download = `clawless-ai-${agent.persona.name.toLowerCase().replace(/\s+/g, "-")}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -751,13 +777,15 @@ function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    const storedOpenAI = localStorage.getItem("agentforge_openai_key");
-    const storedGemini = localStorage.getItem("agentforge_gemini_key");
+    const storedOpenAI = localStorage.getItem("clawless_openai_key") || localStorage.getItem("agentforge_openai_key");
+    const storedGemini = localStorage.getItem("clawless_gemini_key") || localStorage.getItem("agentforge_gemini_key");
     if (storedOpenAI) setOpenaiKey(storedOpenAI);
     if (storedGemini) setGeminiKey(storedGemini);
   }, [isOpen]);
 
   const handleSave = () => {
+    localStorage.setItem("clawless_openai_key", openaiKey);
+    localStorage.setItem("clawless_gemini_key", geminiKey);
     localStorage.setItem("agentforge_openai_key", openaiKey);
     localStorage.setItem("agentforge_gemini_key", geminiKey);
     setSaved(true);

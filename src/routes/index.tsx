@@ -78,7 +78,7 @@ function Home() {
                   <div className="flex h-3 w-3 rounded-full bg-red-500" />
                   <div className="flex h-3 w-3 rounded-full bg-yellow-500" />
                   <div className="flex h-3 w-3 rounded-full bg-green-500" />
-                  <span className="ml-2 text-xs text-gray-600">agentforge — Agent Builder</span>
+                  <span className="ml-2 text-xs text-gray-600">Clawless AI — Agent Builder</span>
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-start gap-3">
