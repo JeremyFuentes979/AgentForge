@@ -1,0 +1,1069 @@
+import { createFileRoute } from "@tanstack/react-router";
+import {
+  Bot,
+  ChevronDown,
+  Code,
+  Cpu,
+  Download,
+  FileJson,
+  Globe,
+  Loader2,
+  MessageSquare,
+  RefreshCw,
+  Send,
+  Settings,
+  Sparkles,
+  Terminal,
+  Webhook,
+  Workflow,
+  X,
+  Zap,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { JSX } from "react";
+
+export const Route = createFileRoute("/builder")({
+  component: BuilderPage,
+});
+
+/* ── Types ── */
+interface AgentPersona {
+  name: string;
+  icon: string;
+  systemPrompt: string;
+}
+
+interface WorkflowNode {
+  type: "trigger" | "action" | "output";
+  label: string;
+  description: string;
+}
+
+interface InputField {
+  key: string;
+  label: string;
+  placeholder: string;
+  type: "text" | "textarea" | "select";
+  options?: string[];
+}
+
+interface AgentConfig {
+  persona: AgentPersona;
+  workflow: WorkflowNode[];
+  inputs: InputField[];
+}
+
+interface ChatMessage {
+  role: "user" | "agent";
+  content: string;
+}
+
+/* ── Simulated LLM Engine ── */
+function simulateAgentResponse(systemPrompt: string, userInput: string, inputs: Record<string, string>): string {
+  const inputContext = Object.entries(inputs).map(([k, v]) => `${k}: ${v}`).join(", ");
+
+  const responses: string[] = [
+    `I've analyzed your request. Based on my configuration, here's how I'd approach this:\n\n**Analysis**: "${userInput}"\n\nI'll process this through my automated pipeline. ${inputContext ? `Using the provided context (${inputContext}), I can tailor the response precisely.` : "Proceeding with default settings."}\n\n**Result**: Task processed successfully. The output has been formatted according to your specifications.`,
+    `✅ Processing your request now!\n\n**Input received**: ${userInput}\n${inputContext ? `**Context**: ${inputContext}\n` : ""}**Action**: Executing step 2 of 3 — data transformation complete.\n\n**Summary**: Your automated workflow is responding as designed. All checks passed.\n\n> This is a simulated response. Add your own API key in Settings to connect to a real LLM.`,
+    `Great! Let me work through this step by step.\n\n1. **Parsing input**: "${userInput}"\n2. **Applying rules**: Cross-referencing against configured parameters\n3. **Generating output**: Ready!\n\n**Result**:\n\`\`\`\nStatus: Complete\nData: Processed successfully\nConfidence: 94%\n\`\`\`\n\n*This agent is running in simulation mode. For live AI execution, configure your API key in Settings.*`,
+  ];
+
+  return responses[Math.floor(Math.random() * responses.length)];
+}
+
+/* ── Agent Generation Engine ── */
+function generateAgent(need: string): AgentConfig {
+  const lower = need.toLowerCase();
+
+  // Determine agent type and generate persona
+  let name: string;
+  let icon: string;
+  let trigger: WorkflowNode;
+  let actions: WorkflowNode[];
+  let output: WorkflowNode;
+  let systemPrompt: string;
+  let inputs: InputField[];
+
+  if (lower.includes("tweet") || lower.includes("twitter") || lower.includes("social") || lower.includes("post")) {
+    name = "Social Sync Agent";
+    icon = "📱";
+    trigger = { type: "trigger", label: "Content Trigger", description: "New blog post or content published" };
+    actions = [
+      { type: "action", label: "Draft Tweet", description: "Generate tweet from content summary" },
+      { type: "action", label: "Trend Check", description: "Scan trending topics for relevance" },
+      { type: "action", label: "Schedule Post", description: "Queue tweet for optimal time" },
+    ];
+    output = { type: "output", label: "Review Panel", description: "Tweets ready for manual approval" };
+    systemPrompt = `You are Social Sync Agent — a social media automation specialist.
+
+Your responsibilities:
+1. Receive blog post URLs or content snippets and compose engaging tweets (max 280 chars).
+2. Identify trending topics relevant to the content for hashtag suggestions.
+3. Maintain a consistent brand voice: professional yet approachable.
+4. Output structured tweet drafts with suggested posting times.
+
+Format your responses as:
+- Tweet Draft: [your tweet]
+- Hashtags: #[hashtags]
+- Optimal Time: [time suggestion]`;
+    inputs = [
+      { key: "content_source", label: "Content Source URL", placeholder: "https://yourblog.com/post-url", type: "text" },
+      { key: "brand_tone", label: "Brand Tone", placeholder: "e.g., professional, casual, witty", type: "text" },
+      { key: "hashtags", label: "Preferred Hashtags", placeholder: "tech, AI, automation", type: "text" },
+    ];
+  } else if (lower.includes("email") || lower.includes("newsletter") || lower.includes("draft")) {
+    name = "Email Composer AI";
+    icon = "✉️";
+    trigger = { type: "trigger", label: "Schedule Trigger", description: "Scheduled email dispatch time" };
+    actions = [
+      { type: "action", label: "Content Curation", description: "Aggregate latest content and updates" },
+      { type: "action", label: "Draft Email", description: "Compose newsletter from curated content" },
+      { type: "action", label: "Personalize", description: "Add recipient-specific segments" },
+    ];
+    output = { type: "output", label: "Send Queue", description: "Emails ready for delivery" };
+    systemPrompt = `You are Email Composer AI — a newsletter and email automation specialist.
+
+Your responsibilities:
+1. Curate content from provided sources into a coherent newsletter format.
+2. Write engaging subject lines that boost open rates.
+3. Structure emails with sections: header, main content, call-to-action, footer.
+4. Adapt tone based on brand guidelines (formal, casual, promotional).
+
+Format your output as a complete email ready to send.`;
+    inputs = [
+      { key: "topics", label: "Topics to Cover", placeholder: "product updates, industry news, tips", type: "text" },
+      { key: "audience", label: "Target Audience", placeholder: "e.g., developers, marketers", type: "text" },
+      { key: "tone", label: "Email Tone", placeholder: "professional, friendly, promotional", type: "text" },
+    ];
+  } else if (lower.includes("research") || lower.includes("analyze") || lower.includes("report") || lower.includes("data")) {
+    name = "Research Analyst";
+    icon = "🔬";
+    trigger = { type: "trigger", label: "Query Input", description: "Research question or topic submitted" };
+    actions = [
+      { type: "action", label: "Gather Data", description: "Collect relevant sources and data points" },
+      { type: "action", label: "Analyze Findings", description: "Extract key insights and patterns" },
+      { type: "action", label: "Generate Report", description: "Compile structured analysis report" },
+    ];
+    output = { type: "output", label: "Final Report", description: "Comprehensive analysis ready" };
+    systemPrompt = `You are Research Analyst — an AI-powered research and analysis specialist.
+
+Your responsibilities:
+1. Research topics thoroughly and extract meaningful insights.
+2. Structure findings into clear, actionable reports.
+3. Identify trends, patterns, and key takeaways.
+4. Present data in a digestible format with bullet points and summaries.
+
+Always cite your reasoning and provide structured outputs.`;
+    inputs = [
+      { key: "topic", label: "Research Topic", placeholder: "What should I research?", type: "text" },
+      { key: "depth", label: "Analysis Depth", placeholder: "brief, standard, deep", type: "text" },
+      { key: "format", label: "Output Format", placeholder: "bullet points, full report, summary", type: "text" },
+    ];
+  } else if (lower.includes("customer") || lower.includes("support") || lower.includes("chat") || lower.includes("faq")) {
+    name = "Support Assistant";
+    icon = "🎧";
+    trigger = { type: "trigger", label: "Customer Inquiry", description: "New support ticket or chat message" };
+    actions = [
+      { type: "action", label: "Classify Issue", description: "Categorize and prioritize the request" },
+      { type: "action", label: "Knowledge Lookup", description: "Search knowledge base for solutions" },
+      { type: "action", label: "Generate Response", description: "Draft helpful reply with next steps" },
+    ];
+    output = { type: "output", label: "Response Queue", description: "Answer ready for review and send" };
+    systemPrompt = `You are Support Assistant — a customer support automation specialist.
+
+Your responsibilities:
+1. Understand customer issues and classify them by urgency and category.
+2. Provide clear, helpful, and empathetic responses.
+3. Reference troubleshooting steps and knowledge base articles.
+4. Escalate to human agents when the issue requires manual intervention.
+
+Be concise, friendly, and solution-oriented.`;
+    inputs = [
+      { key: "product", label: "Product/Service", placeholder: "Which product needs support?", type: "text" },
+      { key: "knowledge_base", label: "Knowledge Base URL", placeholder: "https://docs.example.com", type: "text" },
+      { key: "tone", label: "Response Style", placeholder: "friendly, formal, technical", type: "text" },
+    ];
+  } else {
+    name = "Custom Workflow Agent";
+    icon = "⚡";
+    trigger = { type: "trigger", label: "Manual Trigger", description: "User initiates the workflow" };
+    actions = [
+      { type: "action", label: "Process Input", description: "Parse and validate user input data" },
+      { type: "action", label: "Execute Logic", description: "Apply configured business rules" },
+      { type: "action", label: "Format Output", description: "Prepare results in requested format" },
+    ];
+    output = { type: "output", label: "Final Output", description: "Processed result ready for use" };
+    systemPrompt = `You are Custom Workflow Agent — a general-purpose automation assistant.
+
+Your responsibilities:
+1. Accept user input and process it according to the configured workflow.
+2. Apply logical rules and data transformations as specified.
+3. Return structured, clear, and actionable results.
+4. Adapt to the user's specific automation needs.
+
+Always provide organized, readable output with clear sections.`;
+    inputs = [
+      { key: "input_data", label: "Input Data", placeholder: "What data should I process?", type: "textarea" },
+      { key: "instructions", label: "Custom Instructions", placeholder: "Any special processing rules?", type: "text" },
+    ];
+  }
+
+  return {
+    persona: { name, icon, systemPrompt },
+    workflow: [trigger, ...actions, output],
+    inputs,
+  };
+}
+
+/* ── Input Fields Renderer ── */
+function InputFields({ inputs, values, onChange }: {
+  inputs: InputField[];
+  values: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {inputs.map((field) => (
+        <div key={field.key}>
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">
+            {field.label}
+          </label>
+          {field.type === "textarea" ? (
+            <textarea
+              value={values[field.key] || ""}
+              onChange={(e) => onChange(field.key, e.target.value)}
+              placeholder={field.placeholder}
+              rows={3}
+              className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all resize-none"
+            />
+          ) : (
+            <input
+              type="text"
+              value={values[field.key] || ""}
+              onChange={(e) => onChange(field.key, e.target.value)}
+              placeholder={field.placeholder}
+              className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all"
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Workflow Graph ── */
+function WorkflowGraph({ nodes }: { nodes: WorkflowNode[] }) {
+  const typeColors: Record<string, string> = {
+    trigger: "border-emerald-600/40 bg-emerald-600/10 text-emerald-400",
+    action: "border-violet-600/40 bg-violet-600/10 text-violet-400",
+    output: "border-cyan-600/40 bg-cyan-600/10 text-cyan-400",
+  };
+  const typeIcons: Record<string, string> = {
+    trigger: "▶",
+    action: "◆",
+    output: "●",
+  };
+
+  return (
+    <div className="flex flex-col items-center">
+      {nodes.map((node, i) => (
+        <div key={i} className="flex flex-col items-center">
+          <div className={`rounded-xl border px-4 py-3 ${typeColors[node.type]} min-w-[200px] text-center animate-scale-in`}>
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <span className="text-xs font-bold uppercase tracking-wider opacity-70">{node.type}</span>
+            </div>
+            <div className="font-semibold text-sm text-gray-100">{node.label}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{node.description}</div>
+          </div>
+          {i < nodes.length - 1 && (
+            <div className="flex flex-col items-center py-1">
+              <div className="node-connector" />
+              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-800 border border-gray-700 text-gray-500 text-xs">
+                <ChevronDown className="h-3 w-3" />
+              </div>
+              <div className="node-connector" />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Chat Panel ── */
+function ChatPanel({ agent, inputs }: { agent: AgentConfig | null; inputs: Record<string, string> }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "agent", content: "👋 Hello! I'm your agent. Send me a message and I'll process it according to my configuration." },
+  ]);
+  const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
+
+  const handleSend = useCallback(() => {
+    if (!input.trim() || !agent) return;
+
+    const userMsg = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+
+    setIsTyping(true);
+    setTimeout(() => {
+      const response = simulateAgentResponse(agent.persona.systemPrompt, userMsg, inputs);
+      setMessages((prev) => [...prev, { role: "agent", content: response }]);
+      setIsTyping(false);
+    }, 1200 + Math.random() * 800);
+  }, [input, agent, inputs]);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Chat header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600/15 text-lg">
+          {agent?.persona.icon || "🤖"}
+        </div>
+        <div>
+          <div className="text-sm font-medium text-gray-200">{agent?.persona.name || "Agent Chat"}</div>
+          <div className="text-xs text-gray-500">Test your agent in real-time</div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
+            <div
+              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                msg.role === "user"
+                  ? "bg-violet-600/20 text-gray-200 border border-violet-600/20"
+                  : "bg-gray-800/60 text-gray-300 border border-gray-700/50"
+              }`}
+            >
+              <div className="whitespace-pre-wrap">{msg.content}</div>
+            </div>
+          </div>
+        ))}
+        {isTyping && (
+          <div className="flex justify-start animate-fade-in">
+            <div className="bg-gray-800/60 border border-gray-700/50 rounded-2xl px-4 py-3">
+              <div className="flex items-center gap-1.5">
+                <span className="typing-dot inline-block w-2 h-2 rounded-full bg-violet-400" />
+                <span className="typing-dot inline-block w-2 h-2 rounded-full bg-violet-400" />
+                <span className="typing-dot inline-block w-2 h-2 rounded-full bg-violet-400" />
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* Input */}
+      <div className="border-t border-gray-800 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Type a message to test your agent..."
+            className="flex-1 rounded-lg border border-gray-700 bg-gray-900 px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || !agent}
+            className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Integration Guide ── */
+type IntegrationPath = "website" | "cli" | "api";
+
+const integrationPaths: { id: IntegrationPath; icon: typeof Globe; label: string; subtitle: string; color: string }[] = [
+  {
+    id: "website",
+    icon: Globe,
+    label: "Embed on Website",
+    subtitle: "Zero-code chat widget",
+    color: "from-emerald-600/20 to-emerald-600/5 border-emerald-600/30 text-emerald-400",
+  },
+  {
+    id: "cli",
+    icon: Terminal,
+    label: "Run via CLI",
+    subtitle: "Local terminal runner",
+    color: "from-violet-600/20 to-violet-600/5 border-violet-600/30 text-violet-400",
+  },
+  {
+    id: "api",
+    icon: Webhook,
+    label: "API & Webhooks",
+    subtitle: "Connect to any platform",
+    color: "from-cyan-600/20 to-cyan-600/5 border-cyan-600/30 text-cyan-400",
+  },
+];
+
+function IntegrationGuide({ agent }: { agent: AgentConfig }) {
+  const [activeTab, setActiveTab] = useState<IntegrationPath>("website");
+  const [copyText, setCopyText] = useState<string | null>(null);
+
+  const handleCopy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyText(label);
+      setTimeout(() => setCopyText(null), 2000);
+    });
+  };
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://agentforge.ai";
+  const configJson = JSON.stringify(agent, null, 2);
+
+  return (
+    <div className="rounded-2xl border border-gray-800 bg-gray-900/30 overflow-hidden">
+      {/* Header */}
+      <div className="px-5 pt-5 pb-3">
+        <h3 className="text-base font-semibold text-white flex items-center gap-2">
+          <FileJson className="h-4 w-4 text-violet-400" />
+          How to Use Your Agent
+        </h3>
+        <p className="text-xs text-gray-500 mt-1">
+          Deploy your agent in minutes — pick the path that works best for you.
+        </p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-800 px-5">
+        {integrationPaths.map((path) => {
+          const isActive = activeTab === path.id;
+          const Icon = path.icon;
+          return (
+            <button
+              key={path.id}
+              onClick={() => setActiveTab(path.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+                isActive
+                  ? "border-violet-500 text-violet-300"
+                  : "border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600"
+              }`}
+            >
+              <Icon className={`h-4 w-4 ${isActive ? "text-violet-400" : "text-gray-500"}`} />
+              <span className="hidden sm:inline">{path.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab Content */}
+      <div className="p-5">
+        {activeTab === "website" && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600/15 border border-emerald-600/30">
+                <Globe className="h-4 w-4 text-emerald-400" />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-gray-200">Embed on Your Website</h4>
+                <p className="text-xs text-gray-500">Zero-code chat widget — paste and go</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                {
+                  step: "1",
+                  title: "Copy the embed code",
+                  desc: "Use the Script Tag or Iframe code from the export section above.",
+                  code: `<script src="${origin}/embed/${encodeURIComponent(agent.persona.name.replace(/\s+/g, "-").toLowerCase())}" async></script>`,
+                },
+                {
+                  step: "2",
+                  title: "Paste into your website",
+                  desc: 'Add the code just before the <code class="text-violet-400">&lt;/body&gt;</code> tag of your HTML page.',
+                  code: null,
+                },
+                {
+                  step: "3",
+                  title: "Go live",
+                  desc: "Your chat widget is now live on your site — ready to interact with your visitors!",
+                  code: null,
+                },
+              ].map((item) => (
+                <div key={item.step} className="flex gap-3">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600/20 border border-emerald-600/30 text-emerald-400 text-xs font-bold flex-shrink-0 mt-0.5">
+                    {item.step}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-200">{item.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5" dangerouslySetInnerHTML={{ __html: item.desc }} />
+                    {item.code && (
+                      <div className="relative mt-2">
+                        <pre className="rounded-lg border border-gray-700 bg-gray-950 p-2.5 text-xs text-gray-400 overflow-x-auto">
+                          {item.code}
+                        </pre>
+                        <button
+                          onClick={() => handleCopy(item.code!, "code")}
+                          className="absolute top-1.5 right-1.5 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-all"
+                        >
+                          {copyText === "code" ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "cli" && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600/15 border border-violet-600/30">
+                <Terminal className="h-4 w-4 text-violet-400" />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-gray-200">Run on Your Computer</h4>
+                <p className="text-xs text-gray-500">Interact with your agent right from the terminal</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                {
+                  step: "1",
+                  title: "Download your agent config",
+                  desc: 'Click the "Download Agent Config (JSON)" button above to save your agent\'s configuration file.',
+                  code: null,
+                },
+                {
+                  step: "2",
+                  title: "Run the agent via CLI",
+                  desc: "Open your terminal and use the AgentForge CLI runner to start an interactive session.",
+                  code: `npx agentforge run --config ./agent-config.json --key YOUR_API_KEY`,
+                },
+                {
+                  step: "3",
+                  title: "Start chatting",
+                  desc: "Your agent is now running locally! Type messages directly in the terminal and get AI-powered responses in real-time.",
+                  code: null,
+                },
+              ].map((item) => (
+                <div key={item.step} className="flex gap-3">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-600/20 border border-violet-600/30 text-violet-400 text-xs font-bold flex-shrink-0 mt-0.5">
+                    {item.step}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-200">{item.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{item.desc}</p>
+                    {item.code && (
+                      <div className="relative mt-2">
+                        <pre className="rounded-lg border border-gray-700 bg-gray-950 p-2.5 text-xs text-gray-400 overflow-x-auto font-mono">
+                          {item.code}
+                        </pre>
+                        <button
+                          onClick={() => handleCopy(item.code!, "cli")}
+                          className="absolute top-1.5 right-1.5 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-all"
+                        >
+                          {copyText === "cli" ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "api" && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-600/15 border border-cyan-600/30">
+                <Webhook className="h-4 w-4 text-cyan-400" />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-gray-200">Connect via API & Webhooks</h4>
+                <p className="text-xs text-gray-500">Integrate with Make, Zapier, or custom backends</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                {
+                  step: "1",
+                  title: "Copy your agent config",
+                  desc: "Use the JSON config from the download above, or copy the payload schema below.",
+                  code: configJson.length > 200 ? configJson.slice(0, 200) + "..." : configJson,
+                },
+                {
+                  step: "2",
+                  title: "Connect to your platform",
+                  desc: 'Paste the config into Make, Zapier, or your custom backend. Use our standard webhook endpoint:',
+                  code: `${origin}/api/webhook/agent`,
+                },
+                {
+                  step: "3",
+                  title: "Automate everything",
+                  desc: "Trigger your agent automatically from Google Sheets, Slack commands, email receipts, or any webhook event source!",
+                  code: null,
+                },
+              ].map((item) => (
+                <div key={item.step} className="flex gap-3">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-600/20 border border-cyan-600/30 text-cyan-400 text-xs font-bold flex-shrink-0 mt-0.5">
+                    {item.step}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-200">{item.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{item.desc}</p>
+                    {item.code && (
+                      <div className="relative mt-2">
+                        <pre className="rounded-lg border border-gray-700 bg-gray-950 p-2.5 text-xs text-gray-400 overflow-x-auto font-mono">
+                          {item.code}
+                        </pre>
+                        <button
+                          onClick={() => handleCopy(item.code!, "api")}
+                          className="absolute top-1.5 right-1.5 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-all"
+                        >
+                          {copyText === "api" ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Export & Embed Panel ── */
+function ExportPanel({ agent }: { agent: AgentConfig | null }) {
+  const [copied, setCopied] = useState(false);
+
+  if (!agent) return null;
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://6c92263c0f022859c59ceb009ca97719.ctonew.app';
+
+  const embedCode = `<script>
+  (function() {
+    var s = document.createElement('script');
+    s.src = '${origin}/embed/' + encodeURIComponent(${JSON.stringify(JSON.stringify(agent))});
+    s.async = true;
+    document.body.appendChild(s);
+  })();
+</script>`;
+
+  const iframeCode = `<iframe
+  src="${origin}/chat?agent=${encodeURIComponent(agent.persona.name)}"
+  width="100%"
+  height="600"
+  frameborder="0"
+  style="border: none; border-radius: 12px;"
+></iframe>`;
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([JSON.stringify(agent, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `agentforge-${agent.persona.name.toLowerCase().replace(/\s+/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Script Embed */}
+      <div>
+        <h4 className="text-sm font-medium text-gray-300 mb-2">Script Tag Embed</h4>
+        <div className="relative">
+          <pre className="rounded-lg border border-gray-700 bg-gray-950 p-3 text-xs text-gray-400 overflow-x-auto max-h-24">
+            {embedCode}
+          </pre>
+          <button
+            onClick={() => handleCopy(embedCode)}
+            className="absolute top-2 right-2 rounded-md bg-gray-800 px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-all"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+      </div>
+
+      {/* Iframe Embed */}
+      <div>
+        <h4 className="text-sm font-medium text-gray-300 mb-2">Iframe Embed</h4>
+        <div className="relative">
+          <pre className="rounded-lg border border-gray-700 bg-gray-950 p-3 text-xs text-gray-400 overflow-x-auto max-h-24">
+            {iframeCode}
+          </pre>
+          <button
+            onClick={() => handleCopy(iframeCode)}
+            className="absolute top-2 right-2 rounded-md bg-gray-800 px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-all"
+          >
+            Copy
+          </button>
+        </div>
+      </div>
+
+      {/* Download JSON */}
+      <div>
+        <button
+          onClick={handleDownload}
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-gray-800/60 transition-all"
+        >
+          <Download className="h-4 w-4" />
+          Download Agent Config (JSON)
+        </button>
+      </div>
+
+      {/* Integration Guide */}
+      <IntegrationGuide agent={agent} />
+    </div>
+  );
+}
+
+/* ── Settings Modal ── */
+function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const storedOpenAI = localStorage.getItem("agentforge_openai_key");
+    const storedGemini = localStorage.getItem("agentforge_gemini_key");
+    if (storedOpenAI) setOpenaiKey(storedOpenAI);
+    if (storedGemini) setGeminiKey(storedGemini);
+  }, [isOpen]);
+
+  const handleSave = () => {
+    localStorage.setItem("agentforge_openai_key", openaiKey);
+    localStorage.setItem("agentforge_gemini_key", geminiKey);
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      onClose();
+    }, 1500);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-2xl animate-scale-in">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-violet-400" />
+            <h3 className="text-lg font-semibold text-white">Settings</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              OpenAI API Key
+            </label>
+            <input
+              type="password"
+              value={openaiKey}
+              onChange={(e) => setOpenaiKey(e.target.value)}
+              placeholder="sk-..."
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all"
+            />
+            <p className="text-xs text-gray-500 mt-1.5">
+              Your key is stored locally and never sent to our servers.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              Gemini API Key
+            </label>
+            <input
+              type="password"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              placeholder="AIza..."
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all"
+            />
+          </div>
+
+          <button
+            onClick={handleSave}
+            className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:from-violet-500 hover:to-cyan-500 transition-all"
+          >
+            {saved ? "✓ Saved!" : "Save Keys"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Builder Page ── */
+function BuilderPage() {
+  const [automationNeed, setAutomationNeed] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedAgent, setGeneratedAgent] = useState<AgentConfig | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const [showChat, setShowChat] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [generatedId, setGeneratedId] = useState(0);
+
+  // Listen for settings open event from sidebar
+  useEffect(() => {
+    const handler = () => setShowSettings(true);
+    window.addEventListener("open-settings", handler);
+    return () => window.removeEventListener("open-settings", handler);
+  }, []);
+
+  const handleGenerate = useCallback(() => {
+    if (!automationNeed.trim()) return;
+
+    setIsGenerating(true);
+    setShowChat(false);
+    setShowExport(false);
+
+    // Simulate generation delay
+    setTimeout(() => {
+      const newId = generatedId + 1;
+      setGeneratedId(newId);
+      const agent = generateAgent(automationNeed);
+      setGeneratedAgent(agent);
+      setSystemPrompt(agent.persona.systemPrompt);
+      // Reset input values
+      const initial: Record<string, string> = {};
+      agent.inputs.forEach((f) => { initial[f.key] = ""; });
+      setInputValues(initial);
+      setIsGenerating(false);
+    }, 2000);
+  }, [automationNeed, generatedId]);
+
+  const handleInputChange = (key: string, value: string) => {
+    setInputValues((prev) => ({ ...prev, [key]: value }));
+  };
+
+  return (
+    <div className="min-h-full">
+      {/* Settings Modal */}
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        {/* Page Header */}
+        <div className="mb-8">
+          <h1 className="text-2xl md:text-3xl font-bold text-white">
+            Agent Builder
+          </h1>
+          <p className="text-gray-400 mt-1">
+            Describe your automation need and we'll generate a complete AI agent for you.
+          </p>
+        </div>
+
+        <div className="grid lg:grid-cols-5 gap-6">
+          {/* Left Panel - Builder Input */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Input area */}
+            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <MessageSquare className="h-4 w-4 text-violet-400" />
+                <h2 className="text-sm font-semibold text-gray-200">Describe Your Automation Need</h2>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">
+                Tell us what you want your agent to do in plain English.
+              </p>
+              <textarea
+                value={automationNeed}
+                onChange={(e) => setAutomationNeed(e.target.value)}
+                placeholder="e.g. I want a bot that drafts tweets about new tech blog posts and finds trending topics"
+                rows={4}
+                className="w-full rounded-lg border border-gray-700 bg-gray-950 px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all resize-none"
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={!automationNeed.trim() || isGenerating}
+                className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 px-5 py-3 text-sm font-semibold text-white hover:from-violet-500 hover:to-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-violet-600/20"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generating Your Agent...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4" />
+                    Generate System
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Agent Persona */}
+            {generatedAgent && !isGenerating && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 animate-slide-up">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600/20 to-cyan-600/20 border border-violet-600/30 text-2xl flex-shrink-0">
+                    {generatedAgent.persona.icon}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">{generatedAgent.persona.name}</h3>
+                    <p className="text-xs text-gray-500">Generated Agent Persona</p>
+                  </div>
+                </div>
+
+                {/* Editable System Prompt */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">System Prompt</label>
+                    <div className="flex items-center gap-1 text-xs text-violet-400">
+                      <Sparkles className="h-3 w-3" />
+                      <span>Editable</span>
+                    </div>
+                  </div>
+                  <textarea
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    rows={8}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3.5 py-2.5 text-xs text-gray-300 font-mono leading-relaxed placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all resize-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Input Configuration */}
+            {generatedAgent && !isGenerating && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 animate-slide-up stagger-2">
+                <div className="flex items-center gap-2 mb-4">
+                  <Cpu className="h-4 w-4 text-violet-400" />
+                  <h3 className="text-sm font-semibold text-gray-200">Input Configuration</h3>
+                </div>
+                <InputFields
+                  inputs={generatedAgent.inputs}
+                  values={inputValues}
+                  onChange={handleInputChange}
+                />
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            {generatedAgent && !isGenerating && (
+              <div className="flex flex-col gap-3 animate-slide-up stagger-3">
+                <button
+                  onClick={() => { setShowChat(!showChat); setShowExport(false); }}
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${
+                    showChat
+                      ? "bg-violet-600/20 border-violet-600/40 text-violet-300"
+                      : "border-gray-700 text-gray-300 hover:bg-gray-800/60"
+                  }`}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  {showChat ? "Hide Chat" : "Open Sandbox Chat"}
+                </button>
+                <button
+                  onClick={() => { setShowExport(!showExport); setShowChat(false); }}
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all ${
+                    showExport
+                      ? "bg-violet-600/20 border-violet-600/40 text-violet-300"
+                      : "border-gray-700 text-gray-300 hover:bg-gray-800/60"
+                  }`}
+                >
+                  <Code className="h-4 w-4" />
+                  {showExport ? "Hide Export" : "Export & Embed"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Right Panel - Results */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Loading state */}
+            {isGenerating && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-12 flex flex-col items-center justify-center min-h-[400px]">
+                <div className="relative mb-6">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-violet-600/10 animate-node-pulse">
+                    <Sparkles className="h-8 w-8 text-violet-400" />
+                  </div>
+                </div>
+                <div className="shimmer-bg rounded-lg px-4 py-2 mb-3">
+                  <p className="text-sm text-violet-300 font-medium">Analyzing your request...</p>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  Generating agent persona, workflow, and inputs
+                </div>
+              </div>
+            )}
+
+            {/* Workflow Graph */}
+            {generatedAgent && !isGenerating && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 animate-slide-up">
+                <div className="flex items-center gap-2 mb-6">
+                  <Workflow className="h-4 w-4 text-violet-400" />
+                  <h3 className="text-sm font-semibold text-gray-200">Workflow Graph</h3>
+                </div>
+                <WorkflowGraph nodes={generatedAgent.workflow} />
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!generatedAgent && !isGenerating && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-12 flex flex-col items-center justify-center min-h-[400px]">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-600/10 border border-violet-600/20 mb-4">
+                  <Bot className="h-8 w-8 text-violet-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">Ready to Build</h3>
+                <p className="text-sm text-gray-500 text-center max-w-sm">
+                  Describe your automation need on the left and click "Generate System" to create your custom AI agent.
+                </p>
+              </div>
+            )}
+
+            {/* Sandbox Chat Panel */}
+            {showChat && generatedAgent && !isGenerating && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 overflow-hidden h-[400px] animate-slide-up">
+                <ChatPanel agent={generatedAgent} inputs={inputValues} />
+              </div>
+            )}
+
+            {/* Export Panel */}
+            {showExport && generatedAgent && !isGenerating && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 animate-slide-up">
+                <div className="flex items-center gap-2 mb-4">
+                  <Code className="h-4 w-4 text-violet-400" />
+                  <h3 className="text-sm font-semibold text-gray-200">Export & Embed</h3>
+                </div>
+                <ExportPanel agent={generatedAgent} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
