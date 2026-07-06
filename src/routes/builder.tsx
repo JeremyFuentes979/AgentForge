@@ -84,7 +84,7 @@ function generateAgent(need: string): AgentConfig {
   let systemPrompt: string;
   let inputs: InputField[];
 
-  if (lower.includes("assistant") || lower.includes("personal") || lower.includes("everyday") || lower.includes("helper") || lower.includes("schedule") || lower.includes("todo") || lower.includes("task") || lower.includes("organize")) {
+  if (lower.includes("assistant") || lower.includes("personal") || lower.includes("everyday") || lower.includes("helper") || lower.includes("schedule") || lower.includes("todo") || lower.includes("task") || lower.includes("organize") || lower.includes("checklist") || lower.includes("agenda") || lower.includes("reminder") || lower.includes("reminders") || lower.includes("note") || lower.includes("notes") || (lower.includes("draft") && !lower.includes("email") && !lower.includes("newsletter") && !lower.includes("tweet") && !lower.includes("twitter"))) {
     name = "Personal Assistant AI";
     icon = "🤖";
     trigger = { type: "trigger", label: "User Command", description: "You submit an everyday task or scheduling request" };
@@ -137,7 +137,7 @@ Format your responses as:
       { key: "brand_tone", label: "Brand Tone", placeholder: "e.g., professional, casual, witty", type: "text" },
       { key: "hashtags", label: "Preferred Hashtags", placeholder: "tech, AI, automation", type: "text" },
     ];
-  } else if (lower.includes("email") || lower.includes("newsletter") || lower.includes("draft")) {
+  } else if (lower.includes("email") || lower.includes("newsletter") || lower.includes("inbox") || lower.includes("compose")) {
     name = "Email Composer AI";
     icon = "✉️";
     trigger = { type: "trigger", label: "Schedule Trigger", description: "Scheduled email dispatch time" };
