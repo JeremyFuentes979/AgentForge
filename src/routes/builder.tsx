@@ -58,6 +58,86 @@ interface ChatMessage {
   content: string;
 }
 
+/* ── Real LLM API Functions ── */
+async function callOpenAI(messages: { role: string; content: string }[], apiKey: string, jsonMode = false): Promise<string> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages,
+      max_tokens: 1024,
+      temperature: 0.7,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI API error (${response.status}): ${err}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content || "No response generated.";
+}
+
+async function callGemini(systemPrompt: string, userMessage: string, apiKey: string, jsonMode = false): Promise<string> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: `${systemPrompt}\n\nUser: ${userMessage}` }],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 1024,
+          temperature: 0.7,
+          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Gemini API error (${response.status}): ${err}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+}
+
+function getApiKeys(): { openai: string; gemini: string } {
+  if (typeof window === "undefined") return { openai: "", gemini: "" };
+  return {
+    openai: localStorage.getItem("clawless_openai_key") || localStorage.getItem("agentforge_openai_key") || "",
+    gemini: localStorage.getItem("clawless_gemini_key") || localStorage.getItem("agentforge_gemini_key") || "",
+  };
+}
+
+async function callLLM(messages: { role: string; content: string }[], jsonMode = false): Promise<string | null> {
+  const { openai, gemini } = getApiKeys();
+
+  if (openai) {
+    return callOpenAI(messages, openai, jsonMode);
+  }
+  if (gemini) {
+    const systemMsg = messages.find((m) => m.role === "system")?.content || "";
+    const userMsg = messages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+    return callGemini(systemMsg, userMsg, gemini, jsonMode);
+  }
+
+  return null; // No API key available
+}
+
 /* ── Simulated LLM Engine ── */
 function simulateAgentResponse(systemPrompt: string, userInput: string, inputs: Record<string, string>): string {
   const inputContext = Object.entries(inputs).map(([k, v]) => `${k}: ${v}`).join(", ");
@@ -323,13 +403,20 @@ function ChatPanel({ agent, inputs }: { agent: AgentConfig | null; inputs: Recor
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [apiMode, setApiMode] = useState<"simulated" | "live">("simulated");
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Check if API keys are available
+  useEffect(() => {
+    const { openai, gemini } = getApiKeys();
+    setApiMode(openai || gemini ? "live" : "simulated");
+  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!input.trim() || !agent) return;
 
     const userMsg = input.trim();
@@ -337,12 +424,33 @@ function ChatPanel({ agent, inputs }: { agent: AgentConfig | null; inputs: Recor
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
 
     setIsTyping(true);
-    setTimeout(() => {
-      const response = simulateAgentResponse(agent.persona.systemPrompt, userMsg, inputs);
+    try {
+      let response: string;
+
+      if (apiMode === "live") {
+        const llmMessages = [
+          { role: "system" as const, content: agent.persona.systemPrompt },
+          { role: "user" as const, content: `Input values: ${JSON.stringify(inputs)}\n\nUser message: ${userMsg}` },
+        ];
+        const result = await callLLM(llmMessages);
+        response = result || simulateAgentResponse(agent.persona.systemPrompt, userMsg, inputs);
+      } else {
+        // Simulate a delay for realism
+        await new Promise((resolve) => setTimeout(resolve, 1200 + Math.random() * 800));
+        response = simulateAgentResponse(agent.persona.systemPrompt, userMsg, inputs);
+      }
+
       setMessages((prev) => [...prev, { role: "agent", content: response }]);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      setMessages((prev) => [...prev, { role: "agent", content: `⚠️ Error: ${errorMsg}\n\nFalling back to simulation...` }]);
+      // Fallback to simulation
+      const fallback = simulateAgentResponse(agent.persona.systemPrompt, userMsg, inputs);
+      setMessages((prev) => [...prev, { role: "agent", content: fallback }]);
+    } finally {
       setIsTyping(false);
-    }, 1200 + Math.random() * 800);
-  }, [input, agent, inputs]);
+    }
+  }, [input, agent, inputs, apiMode]);
 
   return (
     <div className="flex flex-col h-full">
@@ -351,9 +459,19 @@ function ChatPanel({ agent, inputs }: { agent: AgentConfig | null; inputs: Recor
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600/15 text-lg">
           {agent?.persona.icon || "🤖"}
         </div>
-        <div>
+        <div className="flex-1">
           <div className="text-sm font-medium text-gray-200">{agent?.persona.name || "Agent Chat"}</div>
-          <div className="text-xs text-gray-500">Test your agent in real-time</div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Test your agent in real-time</span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              apiMode === "live"
+                ? "bg-emerald-600/15 text-emerald-400 border border-emerald-600/30"
+                : "bg-amber-600/15 text-amber-400 border border-amber-600/30"
+            }`}>
+              <span className={`inline-block w-1.5 h-1.5 rounded-full ${apiMode === "live" ? "bg-emerald-400" : "bg-amber-400"}`} />
+              {apiMode === "live" ? "Live" : "Simulated"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -864,6 +982,13 @@ function BuilderPage() {
   const [showExport, setShowExport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [generatedId, setGeneratedId] = useState(0);
+  const [hasApiKey, setHasApiKey] = useState(false);
+
+  // Check for API keys on mount and when settings might change
+  useEffect(() => {
+    const { openai, gemini } = getApiKeys();
+    setHasApiKey(!!(openai || gemini));
+  }, [showSettings]);
 
   // Listen for settings open event from sidebar
   useEffect(() => {
@@ -872,21 +997,79 @@ function BuilderPage() {
     return () => window.removeEventListener("open-settings", handler);
   }, []);
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     if (!automationNeed.trim()) return;
 
     setIsGenerating(true);
     setShowChat(false);
     setShowExport(false);
 
-    // Simulate generation delay
+    const { openai, gemini } = getApiKeys();
+    const hasLLM = !!(openai || gemini);
+
+    if (hasLLM) {
+      // Use real LLM to generate a smarter agent configuration
+      try {
+        const llmMessages = [
+          {
+            role: "system" as const,
+            content: `You are an AI agent architect. Generate a complete agent configuration based on the user's automation need.
+Respond with ONLY valid JSON in this exact format, no markdown formatting:
+{
+  "persona": {
+    "name": "creative agent name",
+    "icon": "single emoji representing the agent",
+    "systemPrompt": "detailed system prompt for the agent"
+  },
+  "workflow": [
+    {"type": "trigger", "label": "trigger name", "description": "what triggers this"},
+    {"type": "action", "label": "action name", "description": "what this action does"},
+    {"type": "action", "label": "action name", "description": "what this action does"},
+    {"type": "output", "label": "output name", "description": "what the final output looks like"}
+  ],
+  "inputs": [
+    {"key": "field_key", "label": "Human readable label", "placeholder": "placeholder text", "type": "text"}
+  ]
+}
+
+Requirements:
+- name: Short, descriptive, creative.
+- icon: A single relevant emoji.
+- systemPrompt: 3-5 paragraph detailed prompt.
+- workflow: 1 trigger, 2-3 actions, 1 output node.
+- inputs: 2-3 relevant input fields with type "text" or "textarea".
+- field keys should be lowercase_snake_case.`,
+          },
+          { role: "user" as const, content: `Automation need: ${automationNeed}` },
+        ];
+        const result = await callLLM(llmMessages, true);
+        if (result) {
+          // Try to parse JSON from the response (handle potential markdown wrapping)
+          const jsonMatch = result.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]) as AgentConfig;
+            setGeneratedAgent(parsed);
+            setSystemPrompt(parsed.persona.systemPrompt);
+            const initial: Record<string, string> = {};
+            parsed.inputs.forEach((f) => { initial[f.key] = ""; });
+            setInputValues(initial);
+            setGeneratedId((id) => id + 1);
+            setIsGenerating(false);
+            return;
+          }
+        }
+      } catch {
+        // Fall through to keyword-based generation
+      }
+    }
+
+    // Fallback: use keyword-based generation (original behavior)
     setTimeout(() => {
       const newId = generatedId + 1;
       setGeneratedId(newId);
       const agent = generateAgent(automationNeed);
       setGeneratedAgent(agent);
       setSystemPrompt(agent.persona.systemPrompt);
-      // Reset input values
       const initial: Record<string, string> = {};
       agent.inputs.forEach((f) => { initial[f.key] = ""; });
       setInputValues(initial);
@@ -933,6 +1116,24 @@ function BuilderPage() {
                 rows={4}
                 className="w-full rounded-lg border border-gray-700 bg-gray-950 px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-600/50 focus:border-violet-600/50 transition-all resize-none"
               />
+              <div className="mt-3 flex items-center justify-between">
+                <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium ${
+                  hasApiKey
+                    ? "bg-emerald-600/10 text-emerald-400 border border-emerald-600/25"
+                    : "bg-amber-600/10 text-amber-400 border border-amber-600/25"
+                }`}>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${hasApiKey ? "bg-emerald-400" : "bg-amber-400"}`} />
+                  {hasApiKey ? "AI-Powered" : "Simulated"}
+                  {!hasApiKey && (
+                    <button
+                      onClick={() => setShowSettings(true)}
+                      className="underline hover:text-amber-300 ml-1"
+                    >
+                      Add Key
+                    </button>
+                  )}
+                </div>
+              </div>
               <button
                 onClick={handleGenerate}
                 disabled={!automationNeed.trim() || isGenerating}
